@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # Databases
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hotel_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  # Microservices
+  auth-service:
+    build: ../services/auth-service
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hotel_db
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+
+  rooms-service:
+    build: ../services/rooms-service
+    ports:
+      - "8002:8002"
+    environment:
+      MONGODB_URL: mongodb://mongodb:27017
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - mongodb
+      - redis
+
+  booking-service:
+    build: ../services/booking-service
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hotel_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  payment-service:
+    build: ../services/payment-service
+    ports:
+      - "8004:8004"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hotel_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  notification-service:
+    build: ../services/notification-service
+    ports:
+      - "8005:8005"
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      - rabbitmq
+
+  # API Gateway (Nginx)
+  api-gateway:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service
+      - rooms-service
+      - booking-service
+      - payment-service
+
+volumes:
+  postgres_data:
+  mongo_data:
